@@ -2,3 +2,7 @@
 .idea
 .qodana
 build
+
+# rd-gen output
+*.Generated.cs
+*.Generated.kt

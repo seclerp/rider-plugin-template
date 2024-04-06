@@ -1,39 +1,50 @@
 package org.jetbrains.plugins.template
 
-import com.intellij.ide.highlighter.XmlFileType
+import com.intellij.openapi.actionSystem.ActionManager
 import com.intellij.openapi.components.service
-import com.intellij.psi.xml.XmlFile
-import com.intellij.testFramework.TestDataPath
-import com.intellij.testFramework.fixtures.BasePlatformTestCase
-import com.intellij.util.PsiErrorElementUtil
+import com.jetbrains.rider.test.actions.TestRenameAction
+import com.jetbrains.rider.test.annotations.TestEnvironment
+import com.jetbrains.rider.test.base.TypingAssistTestBase
+import com.jetbrains.rider.test.env.enums.BuildTool
+import com.jetbrains.rider.test.env.enums.SdkVersion
+import com.jetbrains.rider.test.scriptingApi.renameElement
+import com.jetbrains.rider.test.scriptingApi.typeWithLatency
+import com.jetbrains.rider.test.scriptingApi.withOpenedEditor
 import org.jetbrains.plugins.template.services.MyProjectService
+import org.testng.annotations.AfterTest
+import org.testng.annotations.BeforeTest
+import org.testng.annotations.Test
+import kotlin.test.assertNotEquals
 
-@TestDataPath("\$CONTENT_ROOT/src/test/testData")
-class MyPluginTest : BasePlatformTestCase() {
+@TestEnvironment(sdkVersion = SdkVersion.AUTODETECT, buildTool = BuildTool.AUTODETECT)
+class MyPluginTest : TypingAssistTestBase() {
+    private val actionManager by lazy { ActionManager.getInstance() }
 
-    fun testXMLFile() {
-        val psiFile = myFixture.configureByText(XmlFileType.INSTANCE, "<foo>bar</foo>")
-        val xmlFile = assertInstanceOf(psiFile, XmlFile::class.java)
+    @BeforeTest
+    fun prepareActions() {
+        // This is required for `renameElement` to work properly.
+        actionManager.registerAction("TestRename", TestRenameAction())
+    }
 
-        assertFalse(PsiErrorElementUtil.hasErrors(project, xmlFile.virtualFile))
+    @AfterTest
+    fun disposeActions() {
+        actionManager.unregisterAction("TestRename")
+    }
 
-        assertNotNull(xmlFile.rootTag)
-
-        xmlFile.rootTag?.let {
-            assertEquals("foo", it.name)
-            assertEquals("bar", it.value.text)
+    @Test
+    fun testRename() {
+        withOpenedEditor("Program.cs", "Program.cs") {
+            renameElement()
+            typeWithLatency("SpaceShipName")
         }
     }
 
-    fun testRename() {
-        myFixture.testRename("foo.xml", "foo_after.xml", "a2")
-    }
-
+    @Test
     fun testProjectService() {
         val projectService = project.service<MyProjectService>()
 
-        assertNotSame(projectService.getRandomNumber(), projectService.getRandomNumber())
+        assertNotEquals(projectService.getRandomNumber(), projectService.getRandomNumber())
     }
 
-    override fun getTestDataPath() = "src/test/testData/rename"
+    override fun getSolutionDirectoryName() = "MyProjectTestSln"
 }

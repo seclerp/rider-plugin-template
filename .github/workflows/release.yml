@@ -37,6 +37,12 @@ jobs:
         with:
           gradle-home-cache-cleanup: true
 
+      # Setup .NET environment for backend plugin build
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v3
+        with:
+          global-json-file: src/dotnet/global.json
+
       # Set environment variables
       - name: Export Properties
         id: properties

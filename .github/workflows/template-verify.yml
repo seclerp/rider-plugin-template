@@ -14,7 +14,7 @@ jobs:
 
   build:
     name: Template Verify
-    if: github.event.repository.name == 'intellij-platform-plugin-template'
+    if: github.event.repository.name == 'rider-plugin-template'
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.properties.outputs.version }}
@@ -29,12 +29,13 @@ jobs:
       - name: Verify gradle.properties
         run: |
           echo "\`\`\`diff" >> $GITHUB_STEP_SUMMARY
-          
+
           diff -U 0 \
             -I '^pluginVersion' \
             -I '^pluginGroup' \
             -I '^pluginName' \
             -I '^pluginRepositoryUrl' \
+            -I '^dotnetPluginNamespace' \
             --label .github/template-cleanup/gradle.properties \
             --label gradle.properties \
             .github/template-cleanup/gradle.properties gradle.properties \

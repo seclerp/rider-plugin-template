@@ -1,3 +1,31 @@
+# Rider Plugin Template
+
+[![Twitter Follow](https://img.shields.io/badge/follow-%40JetBrainsRider-1DA1F2?logo=twitter)](https://twitter.com/JetBrainsRider)
+
+
+This template is a fork of a template used to create IntelliJ Platform plugins adopted to be used for Rider plugin development.
+
+Rider plugins are a bit more complex then IDEA ones, so this template has a bunch of differences compared to the original one.
+
+## Differences from `intellij-platform-plugin-template`
+- Product: `RD` instead of `IC`
+- Rd: Configured `rd` protocol infrastructure
+- Testing: Replaced IntelliJ-based testing infrastructure (`com.intellij.testFramework`) with Rider testing infrastructure (`com.jetbrains.rider.test`)
+- Qodana: Added .NET analysis configuration
+
+## Differences from `resharper-rider-template`
+- Rider only
+- Kotlin-based Gradle build files
+- Modular Rider SDK based approach for backend part
+
+## Useful links
+- [Original official ReSharper/Rider Plugin template](https://github.com/JetBrains/resharper-rider-plugin)
+- [ReSharper Platform SDK documentation](https://www.jetbrains.com/help/resharper/sdk/welcome.html)
+
+The rest of a README is about IntelliJ Platform plugin template in general, which is also important for the Rider plugins.
+
+---
+
 # IntelliJ Platform Plugin Template
 
 [![official JetBrains project](https://jb.gg/badges/official.svg)][jb:github]

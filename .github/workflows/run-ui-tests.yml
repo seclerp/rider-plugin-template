@@ -48,6 +48,12 @@ jobs:
         with:
           gradle-home-cache-cleanup: true
 
+      # Setup .NET environment for backend plugin build
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v3
+        with:
+          global-json-file: src/dotnet/global.json
+
       # Run IDEA prepared for UI testing
       - name: Run IDE
         run: ${{ matrix.runIde }}

@@ -4,7 +4,7 @@
     <name>IntelliJ Platform Plugin Template</name>
     <vendor>JetBrains</vendor>
 
-    <depends>com.intellij.modules.platform</depends>
+    <depends>com.intellij.modules.rider</depends>
 
     <resource-bundle>messages.MyBundle</resource-bundle>
 

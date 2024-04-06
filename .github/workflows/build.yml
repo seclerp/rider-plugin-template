@@ -57,6 +57,12 @@ jobs:
         with:
           gradle-home-cache-cleanup: true
 
+      # Setup .NET environment for backend plugin build
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v3
+        with:
+          global-json-file: src/dotnet/global.json
+
       # Set environment variables
       - name: Export Properties
         id: properties
@@ -121,23 +127,39 @@ jobs:
         with:
           gradle-home-cache-cleanup: true
 
+      # Setup .NET environment for backend plugin build
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v3
+        with:
+          global-json-file: src/dotnet/global.json
+
       # Run tests
-      - name: Run Tests
+      - name: Run Frontend Tests
         run: ./gradlew check
 
       # Collect Tests Result of failed tests
-      - name: Collect Tests Result
+      - name: Collect Frontend Tests Result
         if: ${{ failure() }}
         uses: actions/upload-artifact@v4
         with:
           name: tests-result
           path: ${{ github.workspace }}/build/reports/tests
+      - name: Collect Frontend Tests Logs
+        uses: actions/upload-artifact@v3
+        with:
+          name: tests-logs
+          path: ${{ github.workspace }}/build/idea-sandbox/system-test/log
+        if: ${{ always() }}
 
       # Upload the Kover report to CodeCov
       - name: Upload Code Coverage Report
         uses: codecov/codecov-action@v4
         with:
           files: ${{ github.workspace }}/build/reports/kover/report.xml
+
+      # Run backend .NET tests
+      - name: Run Backend Tests
+        run: ./gradlew checkDotnet
 
   # Run Qodana inspections and provide report
   inspectCode:
@@ -204,6 +226,12 @@ jobs:
         uses: gradle/actions/setup-gradle@v3
         with:
           gradle-home-cache-cleanup: true
+
+      # Setup .NET environment for backend plugin build
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v3
+        with:
+          global-json-file: src/dotnet/global.json
 
       # Cache Plugin Verifier IDEs
       - name: Setup Plugin Verifier IDEs Cache

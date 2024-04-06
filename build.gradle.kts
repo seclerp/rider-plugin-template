@@ -1,5 +1,7 @@
 import org.jetbrains.changelog.Changelog
 import org.jetbrains.changelog.markdownToHTML
+import com.jetbrains.rd.generator.gradle.RdGenExtension
+import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
 fun properties(key: String) = providers.gradleProperty(key)
 fun environment(key: String) = providers.environmentVariable(key)
@@ -13,8 +15,53 @@ plugins {
     alias(libs.plugins.kover) // Gradle Kover Plugin
 }
 
+// Configure rdgen task for frontend <-> backend protocol generation
+buildscript {
+    repositories {
+        maven { setUrl("https://cache-redirector.jetbrains.com/maven-central") }
+    }
+
+    // https://search.maven.org/artifact/com.jetbrains.rd/rd-gen
+    dependencies {
+        classpath("com.jetbrains.rd:rd-gen:2023.3.0")
+    }
+}
+
+apply {
+    plugin("com.jetbrains.rdgen")
+}
+
+fun File.writeTextIfChanged(content: String) {
+    val bytes = content.toByteArray()
+
+    if (!exists() || !readBytes().contentEquals(bytes)) {
+        println("Writing $path")
+        parentFile.mkdirs()
+        writeBytes(bytes)
+    }
+}
+
 group = properties("pluginGroup").get()
 version = properties("pluginVersion").get()
+
+val pluginName: String by project
+val pluginGroup: String by project
+val pluginFullName = "$pluginGroup.$pluginName"
+
+// Folder that contains sources for Rider-specific plugin's .NET backend
+val dotnetSrcDir = File(projectDir, "src/dotnet")
+val dotnetPluginNamespace: String by project
+val dotnetBuildConfiguration = ext.properties["dotnetBuildConfiguration"] ?: "Debug"
+
+// Rd protocol library configuration
+val rdLibDirectory: () -> File = { file("${tasks.setupDependencies.get().idea.get().classes}/lib/rd") }
+extra["rdLibDirectory"] = rdLibDirectory
+
+// Granular Rider SDK configuration
+// FIle containing generated versions for Rider .NET SDK NuGet packages shipped with the current RD product
+val nuGetSdkPackagesVersionsFile = File(dotnetSrcDir, "RiderSdk.PackageVersions.Generated.props")
+// NuGet config that contains local Rider SDK feed configuration
+val nuGetConfigFile = File(dotnetSrcDir, "nuget.config")
 
 // Configure project's dependencies
 repositories {
@@ -56,9 +103,173 @@ koverReport {
     }
 }
 
+// Configure Rd model generation
+configure<RdGenExtension> {
+    val modelDir = file("$projectDir/protocol/src/main/kotlin/model")
+    val csOutput = file("$projectDir/src/dotnet/$dotnetPluginNamespace/Rd")
+    val ktOutput = file("$projectDir/src/main/kotlin/${pluginGroup.replace('.','/').lowercase()}/rd")
+
+    verbose = true
+    classpath({
+        "${rdLibDirectory()}/rider-model.jar"
+    })
+    sources("$modelDir/rider")
+    hashFolder = "$buildDir"
+    packages = "model.rider"
+
+    generator {
+        language = "kotlin"
+        transform = "asis"
+        root = "com.jetbrains.rider.model.nova.ide.IdeRoot"
+        namespace = "$pluginGroup.$pluginName.rd"
+        directory = "$ktOutput"
+    }
+
+    generator {
+        language = "csharp"
+        transform = "reversed"
+        root = "com.jetbrains.rider.model.nova.ide.IdeRoot"
+        namespace = "$dotnetPluginNamespace.Rd"
+        directory = "$csOutput"
+    }
+}
+
 tasks {
     wrapper {
         gradleVersion = properties("gradleVersion").get()
+    }
+
+    val riderSdkPath by lazy {
+        val path = setupDependencies.get().idea.get().classes.resolve("lib/DotNetSdkForRdPlugins")
+        if (!path.isDirectory) error("$path does not exist or not a directory")
+
+        println("Rider SDK path: $path")
+        return@lazy path
+    }
+
+    val generateNuGetConfig by registering {
+        doLast {
+            nuGetConfigFile.writeTextIfChanged("""
+                <?xml version="1.0" encoding="utf-8"?>
+                <!-- Auto-generated from 'generateNuGetConfig' task of build.gradle.kts -->
+                <!-- Run `gradlew :prepare` to regenerate -->
+                <configuration>
+                  <packageSources>
+                    <add key="rider-sdk" value="$riderSdkPath" />
+                  </packageSources>
+                </configuration>
+            """.trimIndent())
+        }
+    }
+
+    val generateSdkPackagesVersionsLock by registering {
+        doLast {
+            val excludedNuGets = setOf(
+                "NETStandard.Library"
+            )
+            val sdkPropsFolder = riderSdkPath.resolve("Build")
+            val packageRefRegex = "PackageReference\\.(.+).Props".toRegex()
+            val versionRegex = "<Version>(.+)</Version>".toRegex()
+            val packagesWithVersions = sdkPropsFolder.listFiles()
+                ?.mapNotNull { file ->
+                    val packageId = packageRefRegex.matchEntire(file.name)?.groupValues?.get(1) ?: return@mapNotNull null
+                    val version = versionRegex.find(file.readText())?.groupValues?.get(1) ?: return@mapNotNull null
+
+                    packageId to version
+                }
+                ?.filter { (packageId, _) -> !excludedNuGets.contains(packageId) } ?: emptyList()
+
+            val directoryPackagesFileContents = buildString {
+                appendLine("""
+                    <!-- Auto-generated from 'generateSdkPackagesVersionsLock' task of build.gradle.kts -->
+                    <!-- Run `gradlew :prepare` to regenerate -->
+                    <Project>
+                      <ItemGroup>
+                """.trimIndent())
+                for ((packageId, version) in packagesWithVersions) {
+                    appendLine(
+                        "    <PackageVersion Include=\"${packageId}\" Version=\"${version}\" />"
+                    )
+                }
+                appendLine("""
+                    </ItemGroup>
+                  </Project>
+                """.trimIndent())
+            }
+
+            nuGetSdkPackagesVersionsFile.writeTextIfChanged(directoryPackagesFileContents)
+        }
+    }
+
+    val rdgen by existing
+
+    val prepare = register("prepare") {
+        dependsOn(rdgen, generateNuGetConfig, generateSdkPackagesVersionsLock)
+    }
+
+    val dotnetCompile by registering {
+        dependsOn(prepare)
+        doLast {
+            exec {
+                workingDir(dotnetSrcDir)
+                executable("dotnet")
+                args("build", "-c", dotnetBuildConfiguration)
+            }
+        }
+    }
+
+    register("checkDotnet") {
+        dependsOn(dotnetCompile)
+        doLast {
+            exec {
+                workingDir(dotnetSrcDir.absolutePath)
+                executable("dotnet")
+                args("test", "-c", dotnetBuildConfiguration)
+            }
+        }
+    }
+
+    prepareSandbox {
+        dependsOn(dotnetCompile)
+
+        val outputFolder = file("$dotnetSrcDir/$dotnetPluginNamespace/bin/$dotnetPluginNamespace/$dotnetBuildConfiguration")
+        val backendFiles = listOf(
+            "$outputFolder/$dotnetPluginNamespace.dll",
+            "$outputFolder/$dotnetPluginNamespace.pdb"
+        )
+
+        for (f in backendFiles) {
+            from(f) { into("${rootProject.name}/dotnet") }
+        }
+
+        doLast {
+            for (f in backendFiles) {
+                val file = file(f)
+                if (!file.exists()) throw RuntimeException("File \"$file\" does not exist")
+            }
+        }
+    }
+
+    withType<KotlinCompile> {
+        dependsOn(rdgen)
+    }
+
+    buildPlugin {
+        dependsOn(dotnetCompile)
+
+        copy {
+            from("${buildDir}/distributions/${rootProject.name}-${version}.zip")
+            into("${rootDir}/output")
+        }
+    }
+
+    test {
+        useTestNG()
+        testLogging {
+            showStandardStreams = true
+            exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+        }
+        environment["LOCAL_ENV_RUN"] = "true"
     }
 
     patchPluginXml {
@@ -91,15 +302,6 @@ tasks {
                 )
             }
         }
-    }
-
-    // Configure UI tests plugin
-    // Read more: https://github.com/JetBrains/intellij-ui-test-robot
-    runIdeForUiTests {
-        systemProperty("robot-server.port", "8082")
-        systemProperty("ide.mac.message.dialogs.as.sheets", "false")
-        systemProperty("jb.privacy.policy.text", "<!--999.999-->")
-        systemProperty("jb.consents.confirmation.enabled", "false")
     }
 
     signPlugin {
