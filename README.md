@@ -1,3 +1,7 @@
+# Important
+
+⚠️ This repository is no longer maintained. Please use the .NET template from [ForNeVeR/rider-plugin-template](https://github.com/ForNeVeR/rider-plugin-template) instead.
+
 # Rider Plugin Template
 
 [![Twitter Follow](https://img.shields.io/badge/follow-%40JetBrainsRider-1DA1F2?logo=twitter)](https://twitter.com/JetBrainsRider)
